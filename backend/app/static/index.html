@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>万能爬虫</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #f5f6f8; height: 100vh; display: flex; flex-direction: column; }
+header { background: #1a1a2e; color: #fff; padding: 12px 24px;
+  display: flex; justify-content: space-between; align-items: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+header h1 { font-size: 18px; font-weight: 600; }
+#status { font-size: 12px; padding: 4px 10px; border-radius: 12px;
+  background: #4a4a6a; color: #aaa; }
+#status.running { background: #1976d2; color: #fff; }
+#status.waiting { background: #ff9800; color: #fff; }
+#status.done { background: #4caf50; color: #fff; }
+
+main { flex: 1; display: flex; overflow: hidden; }
+#chat { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#sidebar { width: 320px; background: #fff; border-left: 1px solid #e0e0e0;
+  display: flex; flex-direction: column; }
+#sidebar .sb-header { display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid #eee; }
+#sidebar .sb-header h3 { font-size: 14px; color: #666; margin: 0; font-weight: 500; }
+#newSessionBtn { font-size: 12px; padding: 4px 10px; border: 1px solid #2196f3;
+  background: #fff; color: #2196f3; border-radius: 14px; cursor: pointer; }
+#newSessionBtn:hover { background: #2196f3; color: #fff; }
+#taskList { flex: 1; overflow-y: auto; padding: 8px; }
+.task-item { padding: 10px 12px; border-radius: 8px; cursor: pointer;
+  margin-bottom: 6px; border: 1px solid transparent; }
+.task-item:hover { background: #f0f4ff; }
+.task-item.active { background: #e3f2fd; border-color: #90caf9; }
+.task-item .ti-name { font-size: 13px; font-weight: 500; color: #222;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-item .ti-meta { font-size: 11px; color: #888; margin-top: 3px; }
+.task-item .ti-badge { display: inline-block; padding: 1px 6px; border-radius: 8px;
+  font-size: 10px; margin-right: 4px; }
+.task-item { position: relative; }
+.task-item .ti-del { position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 22px; border-radius: 4px; border: none; background: transparent;
+  color: #ccc; font-size: 14px; cursor: pointer; display: none; align-items: center;
+  justify-content: center; line-height: 1; padding: 0; }
+.task-item:hover .ti-del { display: flex; }
+.task-item .ti-del:hover { background: #ffebee; color: #c62828; }
+.badge-success { background: #e8f5e9; color: #2e7d32; }
+.badge-running { background: #e3f2fd; color: #1565c0; }
+.badge-waiting { background: #fff3e0; color: #e65100; }
+.badge-failed { background: #ffebee; color: #c62828; }
+.badge-cancelled { background: #fafafa; color: #757575; }
+
+#messages { flex: 1; overflow-y: auto; padding: 20px; }
+.msg { margin-bottom: 16px; display: flex; gap: 10px; }
+.msg.user { flex-direction: row-reverse; }
+.msg .avatar { width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+  flex-shrink: 0; }
+.msg.user .avatar { background: #1976d2; color: #fff; }
+.msg.bot .avatar { background: #e0e0e0; color: #555; }
+.msg .bubble { max-width: 75%; padding: 10px 14px; border-radius: 14px;
+  font-size: 14px; line-height: 1.5; word-break: break-word; }
+.msg.user .bubble { background: #1976d2; color: #fff; border-bottom-right-radius: 4px; }
+.msg.bot .bubble { background: #fff; color: #222; border-bottom-left-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.msg .bubble.tool { background: #fffde7; font-size: 12px; color: #666;
+  border-left: 3px solid #f9a825; padding: 6px 10px; margin-top: 6px; }
+.msg .bubble.interrupt { background: #fff3e0; border-left: 3px solid #ff9800; }
+.msg .bubble.progress { background: #e3f2fd; font-size: 12px; color: #555;
+  padding: 6px 10px; }
+.msg .bubble.done { background: #e8f5e9; border-left: 3px solid #4caf50; color: #2e7d32; }
+
+/* 气泡内的执行轨迹（可折叠） */
+.msg.bot .bubble .trail { margin-top: 8px; border-top: 1px dashed #e0e0e0;
+  padding-top: 6px; font-size: 11px; color: #888; display: flex;
+  flex-direction: column; gap: 2px; }
+.msg.bot .bubble .trail summary { cursor: pointer; color: #aaa; user-select: none;
+  padding: 2px 0; }
+.msg.bot .bubble .trail summary:hover { color: #666; }
+.msg.bot .bubble .trail[open] summary { color: #666; margin-bottom: 4px; }
+.msg.bot .bubble .trail-item { display: flex; gap: 6px; align-items: center;
+  padding: 1px 0; }
+.msg.bot .bubble .trail-item .ti-icon { width: 14px; flex-shrink: 0; }
+.msg.bot .bubble .trail-item.tool .ti-icon { color: #f9a825; }
+.msg.bot .bubble .trail-item.tool.done .ti-icon { color: #4caf50; }
+.msg.bot .bubble .trail-item.plan .ti-icon { color: #2196f3; }
+.msg.bot .bubble .trail-item.think .ti-icon { color: #9c27b0; }
+.msg.bot .bubble .think-stream {
+  font-size: 11px; color: #999; line-height: 1.5;
+  white-space: pre-wrap; max-height: 120px; overflow-y: auto;
+  padding: 4px 8px; margin: 4px 0; background: #fafafa;
+  border-left: 2px solid #e0e0e0; border-radius: 3px;
+}
+.msg.bot .bubble .think-stream::-webkit-scrollbar { width: 4px; }
+.msg.bot .bubble .think-stream::-webkit-scrollbar-thumb { background: #ddd; }
+
+#input-area { padding: 12px 16px; background: #fff; border-top: 1px solid #e0e0e0;
+  display: flex; gap: 8px; align-items: flex-end; }
+#input { flex: 1; border: 1px solid #ddd; border-radius: 12px; padding: 10px 14px;
+  font-size: 14px; resize: none; height: 44px; font-family: inherit; }
+#input:focus { outline: none; border-color: #1976d2; }
+#send { background: #1976d2; color: #fff; border: none; border-radius: 12px;
+  padding: 10px 20px; cursor: pointer; font-size: 14px; height: 44px; }
+#send:hover { background: #1565c0; }
+#send:disabled { background: #bbb; cursor: not-allowed; }
+
+#interrupt-bar { display: none; }  /* 旧底部条废弃 */
+
+/* 全屏人工介入弹窗 */
+#interrupt-modal {
+  display: none; position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,.55);
+  align-items: center; justify-content: center;
+  animation: fadeIn .2s ease-out;
+}
+#interrupt-modal.show { display: flex; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+#interrupt-modal .im-box {
+  background: #fff; border-radius: 16px; padding: 0;
+  width: 520px; max-width: 92vw; max-height: 85vh; overflow: hidden;
+  box-shadow: 0 20px 60px rgba(239, 83, 80, .35), 0 6px 20px rgba(0,0,0,.25);
+  animation: slideUp .3s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes slideUp {
+  from { transform: translateY(30px) scale(.96); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+#interrupt-modal .im-header {
+  background: linear-gradient(135deg, #ef5350, #ff7043);
+  color: #fff; padding: 22px 28px;
+  display: flex; align-items: center; gap: 14px;
+}
+#interrupt-modal .im-icon {
+  width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(255,255,255,.25);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,255,255,.5); }
+  50% { transform: scale(1.08); box-shadow: 0 0 0 10px rgba(255,255,255,0); }
+}
+#interrupt-modal .im-title { font-size: 20px; font-weight: 700; letter-spacing: .5px; }
+#interrupt-modal .im-sub { font-size: 12px; opacity: .85; margin-top: 2px; }
+
+#interrupt-modal .im-body {
+  padding: 22px 28px;
+  font-size: 15px; line-height: 1.7; color: #333;
+}
+#interrupt-modal .im-reason {
+  display: inline-block; padding: 3px 10px; border-radius: 4px;
+  font-size: 12px; font-weight: 600; color: #fff;
+  background: #ef5350; margin-bottom: 12px;
+}
+#interrupt-modal .im-body p { margin: 0 0 8px; }
+#interrupt-modal .im-body .im-note {
+  margin-top: 14px; padding: 10px 14px; border-radius: 8px;
+  background: #fff8e1; border-left: 3px solid #ffb300;
+  font-size: 13px; color: #795548; line-height: 1.6;
+}
+
+#interrupt-modal .im-footer {
+  padding: 16px 28px 22px; display: flex; gap: 10px; justify-content: flex-end;
+  border-top: 1px solid #f0f0f0; background: #fafafa;
+}
+#interrupt-modal .im-btn {
+  border: none; border-radius: 10px; padding: 10px 22px;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: all .15s;
+}
+#interrupt-modal .im-btn-primary {
+  background: linear-gradient(135deg, #43a047, #2e7d32); color: #fff;
+  box-shadow: 0 2px 8px rgba(46,125,50,.3);
+}
+#interrupt-modal .im-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(46,125,50,.4); }
+#interrupt-modal .im-btn-ghost {
+  background: #fff; color: #666; border: 1px solid #ddd;
+}
+#interrupt-modal .im-btn-ghost:hover { background: #f5f5f5; }
+#interrupt-modal .im-btn-danger {
+  background: #fff; color: #e53935; border: 1px solid #ffcdd2;
+}
+#interrupt-modal .im-btn-danger:hover { background: #ffebee; }
+
+#data-panel { border-top: 1px solid #e0e0e0; max-height: 280px; overflow-y: auto; }
+#data-panel table { width: 100%; border-collapse: collapse; font-size: 12px; }
+#data-panel th, #data-panel td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #eee; }
+#data-panel th { background: #f5f5f5; position: sticky; top: 0; font-weight: 600; }
+#data-panel tr:hover td { background: #f9f9f9; }
+#data-panel a { color: #1976d2; text-decoration: none; }
+#data-panel a:hover { text-decoration: underline; }
+
+#export-bar { display: none; padding: 8px 16px; background: #fff;
+  border-top: 1px solid #e0e0e0; gap: 6px; align-items: center; flex-wrap: wrap; }
+#export-bar.show { display: flex; }
+#export-bar button { background: #4caf50; color: #fff; border: none; border-radius: 6px;
+  padding: 5px 12px; cursor: pointer; font-size: 12px; }
+#export-bar button:hover { background: #388e3c; }
+
+.sys-note { text-align: center; font-size: 12px; color: #999; padding: 6px 0;
+  margin: 4px 0; border-top: 1px dashed #eee; border-bottom: 1px dashed #eee; }
+.empty-hint { text-align: center; padding: 40px 20px; color: #aaa; font-size: 13px; }
+.empty-hint h2 { font-size: 20px; color: #ccc; margin-bottom: 10px; font-weight: 400; }
+
+/* ============ Bot 气泡内 Markdown 渲染样式 ============ */
+.bubble .text ul, .bubble .text ol { padding-left: 1.6em; margin: 6px 0; }
+.bubble .text li { margin: 3px 0; line-height: 1.55; }
+.bubble .text ol { list-style: decimal; }
+.bubble .text ul { list-style: disc; }
+.bubble .text strong { font-weight: 600; color: #1a1a1a; }
+.bubble .text em { font-style: italic; }
+.bubble .text blockquote {
+  border-left: 3px solid #4a7cff;
+  background: #eef3ff;
+  padding: 8px 12px;
+  margin: 8px 0;
+  border-radius: 0 6px 6px 0;
+  color: #333;
+  font-size: 13px;
+}
+.bubble .text code {
+  background: #f0f0f0;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 12.5px;
+  color: #c7254e;
+}
+.bubble .text pre {
+  background: #2d2d2d;
+  color: #f8f8f2;
+  padding: 12px 14px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 8px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.bubble .text pre code { background: transparent; color: inherit; padding: 0; }
+.bubble .text p { margin: 6px 0; line-height: 1.6; }
+.bubble .text h1, .bubble .text h2, .bubble .text h3 {
+  margin: 10px 0 6px; font-weight: 600; line-height: 1.4;
+}
+.bubble .text h1 { font-size: 17px; }
+.bubble .text h2 { font-size: 15.5px; }
+.bubble .text h3 { font-size: 14px; }
+.bubble .text a { color: #4a7cff; text-decoration: underline; }
+.bubble .text hr { border: none; border-top: 1px dashed #ddd; margin: 10px 0; }
+.bubble .text table { border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.bubble .text th, .bubble .text td {
+  border: 1px solid #e0e0e0; padding: 5px 10px;
+}
+.bubble .text th { background: #f7f7f7; font-weight: 600; }
+</style>
+
+<!-- marked.js：轻量 Markdown 渲染（6KB gzip） -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  // marked 安全配置：自动转义 HTML，防 XSS
+  if (window.marked) {
+    marked.setOptions({ breaks: true, gfm: true });
+  }
+  /** 统一 Markdown → HTML 渲染入口（带安全 fallback） */
+  function _renderMd(text) {
+    if (!text) return "";
+    if (window.marked) {
+      try { return marked.parse(text); } catch(e) { console.warn("marked parse 失败:", e); }
+    }
+    // fallback：纯文本保留换行
+    return escapeHtml(text).replace(/\n/g, "<br>");
+  }
+</script>
+</head>
+<body>
+
+<header>
+  <h1>🕷️ 万能爬虫</h1>
+  <span id="status">就绪</span>
+</header>
+
+<main>
+  <section id="chat">
+    <div id="messages">
+      <div class="empty-hint" id="emptyHint">
+        <h2>你好，我是爬虫智能体</h2>
+        输入你想爬取的内容，比如：<br><br>
+        「帮我抓淘宝上销量前100的蓝牙耳机」<br>
+        「搜索成都java开发岗位，取最新20条」<br>
+        「导出刚才的csv」
+      </div>
+    </div>
+    <div id="data-panel"></div>
+    <div id="export-bar"></div>
+    <div id="input-area">
+      <textarea id="input" placeholder="输入你的爬取需求…" rows="1"></textarea>
+      <button id="send">发送</button>
+    </div>
+  </section>
+
+  <aside id="sidebar">
+    <div class="sb-header">
+      <h3>📋 历史会话</h3>
+      <button id="newSessionBtn" title="开启新会话">＋ 新会话</button>
+    </div>
+    <div id="taskList"><div class="empty-hint">暂无会话</div></div>
+  </aside>
+</main>
+
+<!-- 全屏人工介入弹窗 -->
+<div id="interrupt-modal">
+  <div class="im-box">
+    <div class="im-header">
+      <div class="im-icon">🚨</div>
+      <div>
+        <div class="im-title">需要人工介入</div>
+        <div class="im-sub">爬虫遇到了必须手动处理的情况</div>
+      </div>
+    </div>
+    <div class="im-body">
+      <span class="im-reason" id="im-reason">挑战</span>
+      <p id="im-message">请在浏览器窗口中手动处理，处理完后点「我已处理，继续」。</p>
+      <div class="im-note">
+        💡 浏览器窗口保持打开状态，你可以直接操作。<br>
+        处理完成后回到这里点绿色按钮继续任务。
+      </div>
+    </div>
+    <div class="im-footer">
+      <button class="im-btn im-btn-danger" id="im-cancel">取消任务</button>
+      <button class="im-btn im-btn-ghost" id="im-pause">暂停（稍后处理）</button>
+      <button class="im-btn im-btn-primary" id="im-resume">我已处理，继续 →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ 全局状态 ============
+const state = {
+  taskId: null,
+  es: null,           // EventSource
+  items: [],          // 当前任务爬取的数据
+  activeBotBubble: null,  // 当前活跃的 AI 气泡（所有事件合并到这里）
+};
+
+const $ = (id) => document.getElementById(id);
+const messagesEl = $("messages");
+const emptyHint = $("emptyHint");
+const statusEl = $("status");
+const inputEl = $("input");
+const sendBtn = $("send");
+const dataPanel = $("data-panel");
+const interruptModal = $("interrupt-modal");
+const imReason = $("im-reason");
+const imMessage = $("im-message");
+const imResume = $("im-resume");
+const imCancel = $("im-cancel");
+const imPause = $("im-pause");
+const exportBar = $("export-bar");
+const taskListEl = $("taskList");
+
+// ============ UI 辅助 ============
+function setStatus(text, cls="") {
+  statusEl.textContent = text;
+  statusEl.className = cls;
+}
+
+// ============ 活跃气泡管理（所有 agent 事件合并到一个气泡）============
+
+/** 创建一个 bot 气泡，内含 .text 文本区 + .trail 折叠轨迹区 */
+function _createBotBubble() {
+  const { div, bubble } = addMsg("bot", "");
+  bubble.innerHTML = `<span class="text"></span>
+    <details class="trail" open><summary>🧠 推理 & 工具</summary>
+      <div class="think-stream"></div>
+    </details>`;
+  bubble.dataset.done = "false";
+  return bubble;
+}
+
+/** 获取当前活跃的 bot 气泡；没有就新建一个 */
+function _getActiveBotBubble() {
+  if (state.activeBotBubble && state.activeBotBubble.dataset.done !== "true") {
+    return state.activeBotBubble;
+  }
+  state.activeBotBubble = _createBotBubble();
+  return state.activeBotBubble;
+}
+
+/** 结束当前活跃气泡（新一轮对话开始或 done 时调） */
+function _closeActiveBubble() {
+  if (state.activeBotBubble) {
+    state.activeBotBubble.dataset.done = "true";
+    state.activeBotBubble = null;
+  }
+}
+
+/** 往 trail 里的推理流区追加内容（assistant_delta 流式） */
+function _appendThinkDelta(text) {
+  const bubble = _getActiveBotBubble();
+  const stream = bubble.querySelector(".think-stream");
+  if (stream) {
+    stream.textContent += text;
+  }
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/** 往活跃气泡正文区写最终答案（agent_final） */
+function _setFinalAnswer(text) {
+  const bubble = _getActiveBotBubble();
+  const textSpan = bubble.querySelector(".text");
+  if (textSpan) textSpan.innerHTML = _renderMd(text);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/** 往活跃气泡的 .trail 折叠区加一行 */
+function _addTrailItem(icon, text, cls = "tool") {
+  const bubble = _getActiveBotBubble();
+  const trail = bubble.querySelector(".trail");
+  if (!trail) return;
+  const item = document.createElement("div");
+  item.className = `trail-item ${cls}`;
+  item.innerHTML = `<span class="ti-icon">${icon}</span><span class="ti-text">${escapeHtml(text)}</span>`;
+  trail.appendChild(item);
+  // 只有当用户还没手动展开过时才自动展开
+  if (!trail.hasAttribute("open")) {
+    trail.setAttribute("open", "");
+  }
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return item;  // 返回以便 tool_result 时更新（加 .done class）
+}
+
+// ============ addMsg（保留，只用于用户气泡和中断弹窗等）============
+function addMsg(role, html, extraClass="") {
+  emptyHint.style.display = "none";
+  const div = document.createElement("div");
+  div.className = `msg ${role}`;
+  if (extraClass) div.classList.add(extraClass);
+  div.innerHTML = `<div class="avatar">${role === "user" ? "你" : "AI"}</div>
+    <div class="bubble"></div>`;
+  const bubble = div.querySelector(".bubble");
+  bubble.innerHTML = html;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return { div, bubble };
+}
+
+/** 打字机效果：创建空气泡，逐字追加，完成后标记 data-done="true"
+ *  返回 Promise<void>（完成后 resolve）。支持中断（bubble.dataset.done 提前终止）。
+ */
+function addMsgTypewriter(role, text, opts = {}) {
+  const { speed = 18, done = true } = opts;  // speed=每字毫秒
+  let bubble;
+  if (role === "bot") {
+    // bot 消息：用新结构（.text + .trail）
+    bubble = _createBotBubble();
+  } else {
+    const { bubble: b } = addMsg(role, "");
+    bubble = b;
+  }
+  const textSpan = bubble.querySelector(".text");
+  let target = textSpan || bubble;
+  target.textContent = "";
+  let i = 0;
+  return new Promise((resolve) => {
+    const tick = () => {
+      if (i >= text.length || bubble.dataset.done === "true") {
+        if (done) bubble.dataset.done = "true";
+        resolve();
+        return;
+      }
+      const ch = [...text][i++];
+      target.textContent += ch;
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      setTimeout(tick, speed);
+    };
+    tick();
+  });
+}
+
+function escapeHtml(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ============ 发送消息 ============
+async function sendMessage() {
+  const text = inputEl.value.trim();
+  if (!text) return;
+  inputEl.value = "";
+  autoResize();
+
+  addMsg("user", escapeHtml(text));
+  sendBtn.disabled = true;
+
+  // ★ 关键：先发 fetch 前关旧 SSE，防止 EventSource auto-reconnect
+  // 在 start() 创建新 bus 和 subscribe() 之间抢先消费队列事件
+  if (state.es) { state.es.close(); state.es = null; }
+
+  try {
+    const body = { message: text };
+    if (state.taskId) body.task_id = state.taskId;
+    const resp = await fetch("/api/chat", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) throw new Error((await resp.json()).detail || resp.status);
+    const data = await resp.json();
+    state.taskId = data.task_id;
+    // ⚠️ 不再渲染 HTTP 响应里的 ack 为独立气泡：
+    //   1. ack 是 HTTP 层"收到"的语义确认，不是给用户看的回复
+    //   2. 用户真正想看的内容来自 SSE 的 assistant_delta
+    //   3. 新任务路径的 EVENT_CHAT_ACK（灰色 sys-note 提示条）仍由后端 SSE 发
+    try { localStorage.setItem("lastTaskId", data.task_id); } catch(e) {}
+    subscribe(data.task_id);
+    loadTasks();
+  } catch (e) {
+    addMsg("bot", `❌ ${escapeHtml(e.message)}`);
+    sendBtn.disabled = false;
+  }
+}
+
+// ============ SSE 订阅 ============
+function subscribe(taskId) {
+  if (state.es) state.es.close();
+  state.es = new EventSource(`/api/tasks/${taskId}/stream`);
+
+  state.es.onmessage = (ev) => {
+    const {type, data} = JSON.parse(ev.data);
+    handleEvent(type, data);
+  };
+
+  state.es.onerror = () => {
+    state.es.close();
+    state.es = null;
+  };
+}
+
+function handleEvent(type, data) {
+  switch(type) {
+    // ── agent 回复文本（合并到活跃气泡的 .text 区）──
+    case "assistant_delta": {
+      // 推理流 → trail 里的 .think-stream（不是正文！）
+      _appendThinkDelta(data.text);
+      break;
+    }
+    // ── 工具/规划/推理（合并到活跃气泡的 .trail 折叠区）──
+    case "assistant_reasoning": {
+      // 深度思考也进推理流
+      _appendThinkDelta("\n💭 " + (data.text || "思考中…") + "\n");
+      break;
+    }
+    case "tool_start": {
+      const name = data.tool || data.name || "操作";
+      const item = _addTrailItem("⏳", name + "…", "tool");
+      // 记一下 tool 名，tool_result 时匹配更新
+      item.dataset.tool = name;
+      break;
+    }
+    case "tool_result": {
+      // 把对应的 tool_start 那行标记为 ✅ 完成
+      if (state.activeBotBubble) {
+        const trail = state.activeBotBubble.querySelector(".trail");
+        const toolName = data.tool || data.name || "";
+        if (trail && toolName) {
+          const match = trail.querySelector(`.trail-item[data-tool="${toolName}"]`);
+          if (match) {
+            match.classList.add("done");
+            match.querySelector(".ti-icon").textContent = "✅";
+          }
+        }
+      }
+      // 工具结果里如果有 items 数组 → 更新数据面板
+      if (data.items) {
+        state.items = data.items;
+        renderDataPanel();
+      }
+      break;
+    }
+    case "plan": {
+      _addTrailItem("📋", data.text || "规划中…", "plan");
+      break;
+    }
+    // ── 中断弹窗（单独处理）──
+    case "interrupt": {
+      _closeActiveBubble();  // 结束当前气泡
+      showInterrupt(data.message || "需要人工介入", data.reason || "");
+      break;
+    }
+    // ── agent_final：graph 结束后提取的最终回答 → 正文区！ ──
+    case "agent_final": {
+      _setFinalAnswer(data.text);
+      _closeActiveBubble();  // 完整了，关掉气泡等下一轮
+      break;
+    }
+    // ── 状态徽章 ──
+    case "task_status": {
+      const s = data.status;
+      if (s === "running") setStatus("运行中", "running");
+      else if (s === "waiting_interrupt") setStatus("等待人工", "waiting");
+      else if (s === "done") setStatus("完成", "done");
+      else if (s === "success") setStatus("完成", "done");
+      else if (s === "failed") setStatus("失败", "");
+      else if (s === "cancelled") setStatus("已取消", "");
+      break;
+    }
+    // ── chat_ack（合并到活跃气泡底部）──
+    case "chat_ack": {
+      // chat_ack 是系统提示（"任务已创建..."），不是 AI 回复
+      // 用独立的灰色提示条，不混进气泡
+      const div = document.createElement("div");
+      div.className = "sys-note";
+      div.textContent = "💡 " + data.text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      break;
+    }
+    // ── 后端内部事件：忽略 ──
+    case "_graph_chunk":
+    case "_graph_end":
+    case "_graph_error":
+      break;
+    // ── 任务结束：关闭活跃气泡 ──
+    case "done": {
+      _closeActiveBubble();
+      const s = data.status || "";
+      const label = s === "done" || s === "success" ? "完成 ✅"
+                   : s === "failed" ? "失败 ❌"
+                   : s === "cancelled" ? "已取消"
+                   : s === "waiting_interrupt" ? "等待人工"
+                   : "结束";
+      const cls = s === "done" || s === "success" ? "done"
+                : s === "waiting_interrupt" ? "waiting"
+                : "";
+      setStatus(label, cls);
+      sendBtn.disabled = false;
+      loadResults(state.taskId);
+      loadTasks();
+      break;
+    }
+    case "error": {
+      _closeActiveBubble();
+      addMsg("bot", `❌ ${escapeHtml(data.message)}`);
+      sendBtn.disabled = false;
+      break;
+    }
+    default:
+      // 未知事件：不输出，避免刷屏
+      break;
+  }
+}
+
+// ============ 中断处理（全屏弹窗） ============
+const REASON_LABELS = {
+  captcha: "验证码",
+  slider: "滑块验证",
+  anti_bot: "反爬拦截",
+  login: "登录墙",
+};
+function showInterrupt(msg, reason="") {
+  setStatus("等待人工", "waiting");
+  imReason.textContent = REASON_LABELS[reason] || reason || "挑战";
+  imMessage.innerHTML = escapeHtml(msg);
+  interruptModal.classList.add("show");
+}
+function hideInterrupt() { interruptModal.classList.remove("show"); }
+
+imResume.onclick = async () => {
+  hideInterrupt();
+  sendBtn.disabled = true;
+  try {
+    const resp = await fetch(`/api/tasks/${state.taskId}/resume`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({value: "我已处理完成"}),
+    });
+    if (!resp.ok) throw new Error((await resp.json()).detail);
+    subscribe(state.taskId);
+  } catch (e) {
+    addMsg("bot", `❌ ${escapeHtml(e.message)}`);
+    sendBtn.disabled = false;
+  }
+};
+
+imCancel.onclick = async () => {
+  hideInterrupt();
+  sendBtn.disabled = false;
+  try {
+    await fetch(`/api/tasks/${state.taskId}/cancel`, {method: "POST"});
+    if (state.es) state.es.close();
+    setStatus("已取消", "");
+  } catch(e) {}
+};
+
+imPause.onclick = async () => {
+  hideInterrupt();
+  setStatus("已暂停", "");
+  addMsg("bot", "⏸ 任务已暂停，浏览器保持打开。处理完后输入「继续」可从 checkpoint 恢复。");
+  try {
+    await fetch(`/api/tasks/${state.taskId}/pause`, {method: "POST"});
+  } catch(e) {}
+};
+
+// ============ 数据面板 ============
+function renderDataPanel() {
+  if (!state.items.length) { dataPanel.innerHTML = ""; return; }
+  const cols = Object.keys(state.items[0]);
+  let html = `<div style="padding:8px 12px;font-size:12px;color:#666;
+    display:flex;justify-content:space-between;align-items:center;">
+    📦 已爬取 ${state.items.length} 条数据
+    <div>
+      ${["csv","json","xlsx"].map(f =>
+        `<a href="/api/tasks/${state.taskId}/export?format=${f}"
+          style="margin-left:6px;color:#1976d2;text-decoration:none;font-weight:500;">
+          ⬇ ${f.toUpperCase()}</a>`).join("")}
+    </div>
+  </div>
+  <table><thead><tr>${cols.map(c => `<th>${escapeHtml(c)}</th>`).join("")}</tr></thead><tbody>
+    ${state.items.slice(0, 200).map(row =>
+      `<tr>${cols.map(c => `<td>${escapeHtml(String(row[c] ?? ""))}</td>`).join("")}</tr>`
+    ).join("")}
+  </tbody></table>`;
+  dataPanel.innerHTML = html;
+}
+
+async function loadResults(taskId) {
+  if (!taskId) return;
+  try {
+    const resp = await fetch(`/api/tasks/${taskId}/results?limit=500`);
+    const data = await resp.json();
+    state.items = data.items || [];
+    renderDataPanel();
+  } catch {}
+}
+
+// ============ 侧边栏任务列表 ============
+async function loadTasks() {
+  try {
+    const resp = await fetch("/api/tasks?limit=20");
+    const tasks = await resp.json();
+    if (!tasks.length) {
+      taskListEl.innerHTML = '<div class="empty-hint">暂无历史对话</div>';
+      return;
+    }
+    taskListEl.innerHTML = tasks.map(t => `
+      <div class="task-item ${t.task_id === state.taskId ? "active" : ""}" data-id="${t.task_id}">
+        <button class="ti-del" title="删除此会话" data-del="${t.task_id}">✕</button>
+        <div class="ti-name">${escapeHtml(t.title || "(空对话)")}</div>
+        <div class="ti-meta">
+          ${t.result_count ?? 0} 条数据
+        </div>
+      </div>`).join("");
+    taskListEl.querySelectorAll(".task-item").forEach(el => {
+      el.onclick = (ev) => {
+        // 点到删除按钮不触发选中
+        if (ev.target.dataset.del) return;
+        selectTask(el.dataset.id);
+      };
+    });
+    taskListEl.querySelectorAll(".ti-del").forEach(btn => {
+      btn.onclick = async (ev) => {
+        ev.stopPropagation();
+        const tid = btn.dataset.del;
+        if (!confirm("确定删除此会话？对话历史和爬取数据都会清空。")) return;
+        try {
+          const r = await fetch(`/api/tasks/${tid}`, {method: "DELETE"});
+          if (!r.ok) throw new Error((await r.json()).detail || r.status);
+          // 如果删的是当前会话，清聊天区
+          if (state.taskId === tid) {
+            state.taskId = null;
+            state.activeBotBubble = null;
+            messagesEl.innerHTML = "";
+            statusEl.textContent = "";
+          }
+          await loadTasks();
+        } catch (e) {
+          alert("删除失败：" + e.message);
+        }
+      };
+    });
+  } catch {}
+}
+
+async function selectTask(taskId) {
+  state.taskId = taskId;
+  state.activeBotBubble = null;  // 清活跃气泡（新对话或历史加载不合并）
+  // 关掉旧 SSE（如果正在运行）
+  if (state.es) { state.es.close(); state.es = null; }
+  messagesEl.innerHTML = "";
+  emptyHint.style.display = "none";
+  sendBtn.disabled = false;  // 选中历史任务后允许继续对话
+  state.items = [];
+  renderDataPanel();
+  hideInterrupt();
+
+  // 存到 localStorage，下次刷新自动恢复
+  try { localStorage.setItem("lastTaskId", taskId); } catch(e) {}
+
+  // 1. 并行加载：历史消息 + 数据结果
+  let msgs = [];
+  try {
+    const mResp = await fetch(`/api/tasks/${taskId}/messages`);
+    const mData = await mResp.json();
+    msgs = mData.messages || [];
+  } catch (e) {
+    addMsg("bot", `❌ 加载历史失败：${escapeHtml(e.message)}`);
+  }
+
+  // 2. 渲染历史对话（历史不打字机，直接秒渲染）
+  if (!msgs.length) {
+    addMsg("bot", "📭 这个任务还没有对话记录");
+  } else {
+    const frag = document.createDocumentFragment();
+    for (const m of msgs) {
+      const div = document.createElement("div");
+      div.className = `msg ${m.role === "user" ? "user" : "bot"}`;
+      const avatar = m.role === "user" ? "你" : "AI";
+      const bubbleContent = m.role === "user"
+        ? escapeHtml(m.content)
+        : `<span class="text">${_renderMd(m.content)}</span>`;
+      div.innerHTML = `<div class="avatar">${avatar}</div>
+        <div class="bubble" data-done="true">${bubbleContent}</div>`;
+      frag.appendChild(div);
+    }
+    messagesEl.appendChild(frag);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  // 3. 加载数据结果
+  await loadResults(taskId);
+
+  // 5. 订阅事件流
+  //    - 如果任务还在运行 → 从共享 RunEventBus 继续接事件（刷新重连）
+  //    - 如果已结束 → 立即收到 done 事件
+  subscribe(taskId);
+  loadTasks();
+}
+
+// ============ 输入框自动高度 ============
+function autoResize() {
+  inputEl.style.height = "44px";
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+}
+inputEl.addEventListener("input", autoResize);
+inputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+sendBtn.onclick = sendMessage;
+
+// ============ 新会话 ============
+function newSession() {
+  // 取消当前 SSE 订阅
+  if (state.es) { try { state.es.close(); } catch(e) {} state.es = null; }
+  // 清空状态
+  state.taskId = null;
+  state.activeBotBubble = null;
+  localStorage.removeItem("lastTaskId");
+  // 清空聊天区
+  messagesEl.innerHTML = `<div class="empty-hint">
+    <h2>🕷️ 万能爬虫</h2>
+    <p>告诉我你想爬什么，比如：</p>
+    <div style="margin-top:12px;font-size:13px;line-height:1.8">
+      · 打开淘宝，帮我爬取手机数据<br>
+      · 爬取某论坛的热门帖子标题<br>
+      · 导出刚才爬的数据为 CSV
+    </div>
+  </div>`;
+  // 清空数据区
+  document.getElementById("results-table").innerHTML = "";
+  document.getElementById("export-bar").style.display = "none";
+  // 清除侧边栏 active 高亮
+  document.querySelectorAll(".task-item.active").forEach(el => el.classList.remove("active"));
+  setStatus("新会话", "");
+  inputEl.focus();
+}
+document.getElementById("newSessionBtn").onclick = newSession;
+
+// ============ 初始化 ============
+loadTasks();
+// 刷新后自动恢复上次查看的任务
+try {
+  const lastId = localStorage.getItem("lastTaskId");
+  if (lastId) {
+    // 延迟一点点让 loadTasks 先跑完侧边栏
+    setTimeout(() => selectTask(lastId), 300);
+  }
+} catch(e) {}
+</script>
+</body>
+</html>

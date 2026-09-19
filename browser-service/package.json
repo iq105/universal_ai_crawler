@@ -1,0 +1,16 @@
+{
+  "name": "browser-service",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Playwright JS 浏览器微服务：隐身指纹、有头人工介入、会话持久化",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "playwright": "^1.49.1",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  }
+}
