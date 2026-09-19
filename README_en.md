@@ -105,7 +105,10 @@ Subscribe via SSE and see live progress:
 
 ```bash
 # 1. clone
-git clone https://github.com/yourname/universal-ai-crawler.git
+# 1. clone
+github https://github.com/iq105/universal_ai_crawler.git
+gitee https://gitee.com/iq105/universal_ai_crawler.git
+git clone [https://github.com/yourname/universal-ai-crawler.git](https://github.com/iq105/universal_ai_crawler)
 cd universal-ai-crawler
 
 # 2. Python backend

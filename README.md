@@ -105,7 +105,9 @@ Universal AI Crawler 是一个基于 **LangGraph + Playwright + FastAPI** 的 LL
 
 ```bash
 # 1. clone
-git clone https://github.com/yourname/universal-ai-crawler.git
+github https://github.com/iq105/universal_ai_crawler
+gitee https://gitee.com/iq105/universal_ai_crawler
+git clone [https://github.com/yourname/universal-ai-crawler.git](https://github.com/iq105/universal_ai_crawler)
 cd universal-ai-crawler
 
 # 2. Python 后端
