@@ -149,6 +149,7 @@ class RunManager:
         graph = entry["graph"]
         config = entry["config"]
         final_status = "failed"
+        final_text = ""  # RAG reflect 用：任务结束时的最终总结
         try:
             if is_resume:
                 # 统一用 Command(resume=...)：create_agent 的 checkpointer 自动从 checkpoint 恢复
@@ -240,6 +241,16 @@ class RunManager:
             _log.error("[run_manager] 任务运行异常 task_id=%s: %s", task_id, exc)
             await bus.emit("_graph_error", error=repr(exc))
         finally:
+            # ── RAG reflect：任务结束（done/failed/waiting_interrupt/paused）→ 让 Agent 把经验写进知识库 ──
+            # 注意：paused 不算"真正结束"，但也值得写——可能中途暂停前已经有经验了
+            if final_text:  # final_text 在 try 块里已设置
+                try:
+                    from app.core import knowledge
+                    r = await knowledge.reflect(task_id=task_id, final_summary=final_text)
+                    _log.info("[run_manager] RAG reflect task=%s ok=%s", task_id, r.get("ok"))
+                except Exception as rag_exc:  # noqa: BLE001
+                    _log.info("[run_manager] RAG reflect 跳过（不影响主流程）：%s", rag_exc)
+
             # 硬取消（暂停）时 CancelledError 继承 BaseException，不会被上面的 except Exception 捕获，
             # final_status 仍为初始值；这里按 pause 标记纠正为 paused
             if entry.get("paused"):

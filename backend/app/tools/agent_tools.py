@@ -1,4 +1,4 @@
-"""Agent 模式工具集：用 @tool 包装底层实现。
+﻿"""Agent 模式工具集：用 @tool 包装底层实现。
 
 每个工具内部调用对应的底层函数（browser_tools/parse_tools/storage_tools/smart_tools），
 需要运行上下文（task_id/bus/steering）的工具通过 `runtime: ToolRuntime` 参数注入，
@@ -549,6 +549,27 @@ async def save_crawl_config(
     file_path = os.path.join(config_dir, f"{safe_name}.json")
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
+
+    # 同时写入 RAG 知识库（语义检索爬虫模板）
+    try:
+        from app.core import knowledge
+        rag_doc = (
+            f"爬虫模板 site={site_name}\n"
+            f"URL 模板: {url_pattern}\n"
+            f"提取字段: {extract_fields}\n"
+            f"分页策略: {pagination_type}\n"
+            f"备注/反爬注意: {notes}"
+        )
+        import asyncio
+        asyncio.ensure_future(knowledge.add(
+            content=rag_doc,
+            domain=site_name,
+            keywords=[site_name, "爬虫模板"] + extract_fields,
+            success=True,
+        ))
+    except Exception as exc_rag:  # noqa: BLE001
+        pass  # RAG 挂了不影响主功能
+
     return {"ok": True, "path": file_path, "config": config}
 
 
@@ -603,3 +624,54 @@ ALL_AGENT_TOOLS: list = [
     smart_paginate,
     save_crawl_config,
 ]
+# search_knowledge / add_to_knowledge 在下面定义完后追加进去
+
+
+# ======================================================================
+#  RAG / 知识库工具
+# ======================================================================
+
+@tool
+async def search_knowledge(query: str, top_k: int = 5, domain: str = "") -> dict:
+    """从爬虫知识库检索历史爬取经验（反爬策略、DOM 选择器、分页方式、成功/失败经验、
+    爬虫模板）。新域名 open_page 前调用——Agent 会拿到该域名已知的反爬挑战和 DOM 结构，
+    大幅减少零试次数。
+
+    query: 想搜什么，自由文本，如 "京东 滑块验证码"、"招聘网站 字体混淆"、"电商商品卡片 selector"
+    top_k: 返回多少条
+    domain: 可选，限定在哪个域名的经验（如 "jd.com"）；留空搜全局 + 全域名
+    """
+    try:
+        from app.core import knowledge
+        return await knowledge.search(query=query, top_k=top_k, domain=domain)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "msg": f"知识库检索失败: {exc}", "results": []}
+
+
+@tool
+async def add_to_knowledge(content: str, domain: str = "", keywords: list | None = None,
+                          success: bool = True) -> dict:
+    """把爬取经验存入知识库。任务结束、成功解决反爬、或发现新的 DOM/分页规律后调用，
+    下次再爬类似网站就能搜回来。
+
+    content: 经验内容（自由文本），比如 "京东滑块验证码：先 click 再 evaluate('move 210px') 才能通过"
+    domain: 主域名（如 jd.com），存了以后搜 jd.com 专属经验能更快命中
+    keywords: 关键词列表（如 ["京东", "滑块", "反爬"]），语义检索的辅助
+    success: true=成功经验，false=失败踩坑（也值得存，避免重踩）
+    """
+    try:
+        from app.core import knowledge
+        return await knowledge.add(
+            content=content,
+            domain=domain,
+            keywords=list(keywords) if keywords else None,
+            success=success,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "msg": f"知识库写入失败: {exc}"}
+
+# 模块加载完后追加 RAG 工具到全局列表（因为定义在 ALL_AGENT_TOOLS 之后）
+try:
+    ALL_AGENT_TOOLS.extend([search_knowledge, add_to_knowledge])
+except NameError:
+    pass  # 部分加载场景下 search_knowledge 还未定义

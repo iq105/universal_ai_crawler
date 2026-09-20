@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     proxy_list: str = ""
     anti_ban_max_retries: int = 3
 
+    # RAG / Embedding（复用 LLM 同 base_url + api_key，换 model 名即可）
+    embedding_model: str = "text-embedding-v3"  # 百炼 v3；或 "bge-m3" 配合本地 Ollama
+    embedding_enabled: bool = True  # 关了就不建 Chroma，不存不检索
+    knowledge_dir: str = str(Path("artifacts") / "knowledge")  # Chroma 数据目录
+
     # 服务
     port: int = 8000
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]

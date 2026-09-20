@@ -9,6 +9,14 @@
 import asyncio
 import logging
 import subprocess
+import sys
+
+# Windows 上把 ProactorEventLoop 换成 SelectorEventLoop
+# 避免 aiosqlite（LangGraph checkpointer）的 subprocess pipe 在 GC 时触发
+# "Exception ignored in BaseSubprocessTransport.__del__ / RuntimeError: Event loop is closed"
+# 你的项目没用到 asyncio.create_subprocess_exec，SelectorEventLoop 完全够用
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from app.core.logger import setup_logging
 
